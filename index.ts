@@ -10,13 +10,19 @@ const CONTEXT_AUTO_HEADS_UP_MESSAGE_BY_CONTEXT_PERCENT: Readonly<Record<number, 
 	50: {
 		customType: "context-auto-heads-up",
 		content:
-			"Automatic heads up: you just crossed 50% context window usage. If most of the expected work is still ahead of you, tell that to your human or your leader: “I have 50% context window left but less than 50% of the work has been completed (estimation.) Proceeding as usual.” If you are running unattended, write a handoff doc, then proceed as usual. You still have lots of headroom left.",
+			"Automatic heads up: you just crossed 50% context window usage. If most of the expected work is still ahead of you: tell that to your human or your leader: “I have 50% context window left but less than half of the work has been completed (estimation.) Proceeding as usual.” Consider delegating high-noise read-only tasks to sub-agents/teams. You still have lots of headroom left.",
+		display: false,
+	},
+	75: {
+		customType: "context-auto-heads-up",
+		content:
+			"Automatic heads up: you just crossed 75% context window usage. Unless less than a quarter of the work is left, inform your human or your leader, and lower the treshold for what you delegate to dispatched sub-agents/teams: besides read-only scouting, delegate file writing and editing to context-inheriting clones of yourself.",
 		display: false,
 	},
 	90: {
 		customType: "context-auto-heads-up",
 		content:
-			"Automatic heads up: you just crossed 90% context window usage. Unless you have completed all work, inform your human or leader of this. They will want to know before the window caps. If you are running unattended, write a handoff doc, then proceed as usual until further notice.",
+			"Automatic heads up: you just crossed 90% context window usage. Unless you have completed all work, inform your human or leader of this. If you are managing other AIs, inform them too. They need to know before your session caps out. If you are running unattended, write a handoff doc. Switch gears to hands-off, my-fingers-are-other-AIs mode. Don’t CRUD files and Bash yourself. Dispatch sub-agents and teams to get you the stuff you need done.",
 		display: false,
 	},
 };
