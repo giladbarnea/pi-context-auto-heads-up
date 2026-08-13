@@ -1,3 +1,10 @@
+/**
+ * Keep behavior aligned with /Users/giladbarnea/.claude/hooks/context_heads_up.py, which must stay
+ * aligned with this file: a change to either one is a change to both. The thresholds, the heads-up
+ * wording and the fire-once-per-crossing rule are the shared contract; only the plumbing differs
+ * (Pi hooks `before_agent_start`/`turn_end` and reads `ctx.getContextUsage()`, Claude Code hooks
+ * `PostToolUse` and reads the transcript).
+ */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 type ContextAutoHeadsUpMessage = {
@@ -22,7 +29,7 @@ const CONTEXT_AUTO_HEADS_UP_MESSAGE_BY_CONTEXT_PERCENT: Readonly<Record<number, 
 	90: {
 		customType: "context-auto-heads-up",
 		content:
-			"Automatic heads up: you just crossed 90% context window usage. Unless you have completed all work, inform your human or leader of this. If you are managing other AIs, inform them too. They need to know before your session caps out. If you are running unattended, write a handoff doc. Switch gears to hands-off, my-fingers-are-other-AIs mode. Don’t CRUD files and Bash yourself. Dispatch sub-agents and teams to get you the stuff you need done.",
+			"Automatic heads up: you just crossed 90% context window usage. Unless you have completed all work, inform your human or leader of this. If you are managing other AIs, inform them too. They need to know before your session caps out. If you are running unattended, write a handoff doc. Switch gears to hands-off, my-fingers-are-other-AIs mode. Don’t CRUD files and Bash yourself. Dispatch non context-inheriting sub-agents and teams to get you the stuff you need done. Use terse and dense communication style (you to them and them to you) for token eco.",
 		display: false,
 	},
 };
