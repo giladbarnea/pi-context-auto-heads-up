@@ -81,7 +81,9 @@ test("injects a crossed threshold after Pi's compaction check", async () => {
 
 	expect(result.messages).toHaveLength(2);
 	expect(result.messages[1]?.customType).toBe("context-auto-heads-up");
-	expect(result.messages[1]?.content).toContain("crossed 50%");
+	expect(result.messages[1]?.content).toBe(
+		"Automatic heads-up: context usage just crossed 50%. If more than half the expected work remains, tell your human or leader: “About half my context window remains, but more than half the work is still ahead.” Consider delegating high-noise read-only tasks to sub-agents/teams. You still have lots of headroom left.",
+	);
 	expect(harness.notifications).toEqual(["Gave the agent a 50% context heads-up."]);
 	expect(await harness.emit("context", { type: "context", messages: [] })).toBeUndefined();
 });

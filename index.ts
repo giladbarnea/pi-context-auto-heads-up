@@ -11,7 +11,7 @@ const CONTEXT_AUTO_HEADS_UP_MESSAGE_BY_CONTEXT_PERCENT: Readonly<Record<number, 
 	50: {
 		customType: "context-auto-heads-up",
 		content:
-			"Automatic heads up: you just crossed 50% context window usage. If most of the expected work is still ahead of you: tell that to your human or your leader: “I have 50% context window left but less than half of the work has been completed (estimation.) Proceeding as usual.” Consider delegating high-noise read-only tasks to sub-agents/teams. You still have lots of headroom left.",
+			"Automatic heads-up: context usage just crossed 50%. If more than half the expected work remains, tell your human or leader: “About half my context window remains, but more than half the work is still ahead.” Consider delegating high-noise read-only tasks to sub-agents/teams. You still have lots of headroom left.",
 		display: false,
 	},
 	75: {
