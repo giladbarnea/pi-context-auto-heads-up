@@ -1,0 +1,52 @@
+{
+  "name": "@giladbarnea/pi-context-auto-heads-up",
+  "version": "0.0.0",
+  "description": "Give Pi agents context-window heads-ups at 50%, 75%, and 90% usage.",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-agent",
+    "pi-coding-agent",
+    "context-window",
+    "context-management"
+  ],
+  "author": "Gilad Barnea",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/giladbarnea/pi-context-auto-heads-up.git"
+  },
+  "homepage": "https://github.com/giladbarnea/pi-context-auto-heads-up",
+  "bugs": {
+    "url": "https://github.com/giladbarnea/pi-context-auto-heads-up/issues"
+  },
+  "files": [
+    "index.ts",
+    "README.md",
+    "DEVELOPMENT.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run test && npm run typecheck",
+    "prepack": "npm run check"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.4",
+    "@types/bun": "^1.4.0",
+    "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

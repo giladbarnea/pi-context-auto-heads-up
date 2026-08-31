@@ -1,10 +1,4 @@
-/**
- * Keep behavior aligned with /Users/giladbarnea/.claude/hooks/context_heads_up.py, which must stay
- * aligned with this file: a change to either one is a change to both. The thresholds, the heads-up
- * wording and the fire-once-per-crossing rule are the shared contract; only the plumbing differs
- * (Pi hooks `before_agent_start`/`turn_end`/`context` and reads `ctx.getContextUsage()`, Claude Code hooks
- * `PostToolUse` and reads the transcript).
- */
+/** Give the agent one hidden heads-up when context usage crosses 50%, 75%, or 90%. */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 type ContextAutoHeadsUpMessage = {
@@ -23,7 +17,7 @@ const CONTEXT_AUTO_HEADS_UP_MESSAGE_BY_CONTEXT_PERCENT: Readonly<Record<number, 
 	75: {
 		customType: "context-auto-heads-up",
 		content:
-			"Automatic heads up: you just crossed 75% context window usage. Unless less than a quarter of the work is left, inform your human or your leader, and lower the treshold for what you delegate to dispatched sub-agents/teams: besides read-only scouting, delegate file writing and editing to context-inheriting clones of yourself.",
+			"Automatic heads up: you just crossed 75% context window usage. Unless less than a quarter of the work is left, inform your human or your leader, and lower the threshold for what you delegate to dispatched sub-agents/teams: besides read-only scouting, delegate file writing and editing to context-inheriting clones of yourself.",
 		display: false,
 	},
 	90: {
