@@ -2,7 +2,7 @@
  * Keep behavior aligned with /Users/giladbarnea/.claude/hooks/context_heads_up.py, which must stay
  * aligned with this file: a change to either one is a change to both. The thresholds, the heads-up
  * wording and the fire-once-per-crossing rule are the shared contract; only the plumbing differs
- * (Pi hooks `before_agent_start`/`turn_end` and reads `ctx.getContextUsage()`, Claude Code hooks
+ * (Pi hooks `before_agent_start`/`turn_end`/`context` and reads `ctx.getContextUsage()`, Claude Code hooks
  * `PostToolUse` and reads the transcript).
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -75,13 +75,32 @@ export default function (pi: ExtensionAPI) {
 		return { message };
 	});
 
-	pi.on("turn_end", (event, ctx) => {
+	pi.on("turn_end", (_event, ctx) => {
 		observeContextUsage(ctx);
-		if (pendingThreshold === null || event.toolResults.length === 0) return;
+	});
+
+	pi.on("context", (event, ctx) => {
+		if (pendingThreshold === null) return;
+
+		// Pi runs auto-compaction before context handlers, so this check cannot send a stale percentage.
+		const currentContextPercent = getContextPercent(ctx);
+		if (currentContextPercent === null || currentContextPercent < pendingThreshold) {
+			pendingThreshold = null;
+			return;
+		}
 
 		const message = CONTEXT_AUTO_HEADS_UP_MESSAGE_BY_CONTEXT_PERCENT[pendingThreshold];
 		ctx.ui.notify(`Gave the agent a ${pendingThreshold}% context heads-up.`);
 		pendingThreshold = null;
-		pi.sendMessage(message);
+		return {
+			messages: [
+				...event.messages,
+				{
+					role: "custom",
+					...message,
+					timestamp: Date.now(),
+				},
+			],
+		};
 	});
 }
