@@ -37,9 +37,16 @@ The wording is intentionally opinionated. It treats delegation and handoffs as c
 
 - Each threshold fires once per upward crossing.
 - A jump across several thresholds emits only the highest crossed threshold.
-- Compaction clears a pending heads-up and lets a later upward crossing fire again.
-- Mid-run heads-ups are checked after Pi's compaction decision, so the agent never receives a stale percentage.
+- Compaction clears pending delivery. A later measured decrease can rearm thresholds; warnings already written are not retracted.
+- Mid-run heads-ups are appended persistently after the completed assistant/tool turn. The next natural model call sees them; no extra response is forced.
+- Delivery appends new context without rewriting earlier prompt or tool messages. A heads-up remains in history instead of disappearing after one request.
 - Resuming a session starts from its current percentage. The extension does not emit retrospective heads-ups.
+
+## Timing and compaction
+
+A heads-up records the crossing when the turn finishes, **before** Pi's next automatic-compaction decision. Compaction may retain an earlier warning, so treat it as a historical crossing—not a guarantee of current usage. The extension does not retroactively remove delivered warnings or invent a percentage while Pi reports usage as unknown.
+
+Persistent delivery avoids a subtle failure of temporary `context`-hook messages: returning a changed conversation list can fold historical system/tool declarations into a new leading prompt and break preserved-thinking or cache prefixes. See [issue #2](https://github.com/giladbarnea/pi-context-auto-heads-up/issues/2) for the general failure category, official Pi references and controlled evidence.
 
 ## Development
 
