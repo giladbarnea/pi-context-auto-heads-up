@@ -71,30 +71,11 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("turn_end", (_event, ctx) => {
 		observeContextUsage(ctx);
-	});
-
-	pi.on("context", (event, ctx) => {
 		if (pendingThreshold === null) return;
-
-		// Pi runs auto-compaction before context handlers, so this check cannot send a stale percentage.
-		const currentContextPercent = getContextPercent(ctx);
-		if (currentContextPercent === null || currentContextPercent < pendingThreshold) {
-			pendingThreshold = null;
-			return;
-		}
 
 		const message = CONTEXT_AUTO_HEADS_UP_MESSAGE_BY_CONTEXT_PERCENT[pendingThreshold];
 		ctx.ui.notify(`Gave the agent a ${pendingThreshold}% context heads-up.`);
 		pendingThreshold = null;
-		return {
-			messages: [
-				...event.messages,
-				{
-					role: "custom",
-					...message,
-					timestamp: Date.now(),
-				},
-			],
-		};
+		pi.sendMessage(message, { triggerTurn: false });
 	});
 }
