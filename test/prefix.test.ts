@@ -105,7 +105,7 @@ async function runFixture(toolCallCount: number) {
 		expect(new URL(requestUrls[0]!).origin).toBe("https://fixture.invalid");
 		const lastAssistant = session.messages.filter(message => message.role === "assistant").at(-1);
 		expect(lastAssistant?.errorMessage ?? lastAssistant?.stopReason).toBe("stop");
-		return { requests, messages: session.messages };
+		return { requests, messages: session.messages, entries: sessionManager.getEntries() };
 	} finally {
 		session?.dispose();
 		globalThis.fetch = previousFetch;
@@ -128,11 +128,10 @@ test("mid-run heads-ups persist without rewriting earlier system and tool prefix
 	expect(reminders[0]!.content).toContain("crossed 75%");
 });
 
-test("a heads-up after a final response persists without forcing another model call", async () => {
-	const { requests, messages } = await runFixture(0);
+test("a final response keeps its answer last and records the crossing durably without another model call", async () => {
+	const { requests, messages, entries } = await runFixture(0);
 	expect(requests).toHaveLength(1);
-	const reminders = messages.filter(message => message.role === "custom").filter(message => message.customType === "context-auto-heads-up");
-	expect(reminders).toHaveLength(1);
-	expect(reminders[0]!.display).toBe(false);
-	expect(reminders[0]!.content).toContain("crossed 75%");
+	expect(messages.at(-1)!.role).toBe("assistant");
+	const crossings = entries.filter(entry => entry.type === "custom").filter(entry => entry.customType === "context-auto-heads-up-crossing");
+	expect(crossings.map(entry => entry.data)).toEqual([{ threshold: 75 }]);
 });

@@ -15,28 +15,39 @@ type HeadsUpMessage = {
 
 type BeforeAgentStartResult = { message: HeadsUpMessage };
 
-function createHarness(initialContextPercent: number | null) {
+type BranchEntry = { type: string; customType?: string; data?: unknown };
+
+function createHarness(initialContextPercent: number | null, branch: BranchEntry[] = []) {
 	let contextPercent = initialContextPercent;
+	let pendingMessages = false;
 	const handlers = new Map<string, EventHandler>();
 	const notifications: string[] = [];
 	const queuedMessages: Array<{ message: HeadsUpMessage; options: { triggerTurn?: boolean } }> = [];
 	const extensionContext = {
 		getContextUsage: () => ({ tokens: contextPercent, contextWindow: 100, percent: contextPercent }),
+		hasPendingMessages: () => pendingMessages,
+		sessionManager: { getBranch: () => branch },
 		ui: { notify(message: string) { notifications.push(message); } },
 	} as unknown as ExtensionContext;
 	const pi = {
 		on(eventName: string, handler: EventHandler) { handlers.set(eventName, handler); },
 		sendMessage(message: HeadsUpMessage, options: { triggerTurn?: boolean }) {
 			queuedMessages.push({ message, options });
+			branch.push({ type: "custom_message", customType: message.customType });
+		},
+		appendEntry(customType: string, data: unknown) {
+			branch.push({ type: "custom", customType, data });
 		},
 	} as unknown as ExtensionAPI;
 	contextAutoHeadsUp(pi);
 
 	return {
+		branch,
 		notifications,
 		queuedMessages,
 		setContextPercent(value: number | null) { contextPercent = value; },
-		async emit(eventName: string, event: Record<string, unknown> = {}) {
+		setPendingMessages(value: boolean) { pendingMessages = value; },
+		async emit(eventName: string, event: Record<string, unknown> = eventName === "turn_end" ? { toolResults: [{}] } : {}) {
 			const handler = handlers.get(eventName);
 			if (!handler) throw new Error(`Missing ${eventName} handler`);
 			return handler(event, extensionContext);
@@ -116,4 +127,44 @@ test("retains persistent before-agent-start delivery when a user prompt crosses 
 	expect(result.message.content).toContain("crossed 75%");
 	expect(harness.queuedMessages).toEqual([]);
 	expect(await harness.emit("before_agent_start")).toBeUndefined();
+});
+
+test("a final answer's crossing is recorded durably without a context message, then delivered on the next prompt", async () => {
+	const harness = createHarness(74);
+	await harness.emit("session_start");
+	harness.setContextPercent(76);
+	await harness.emit("turn_end", { toolResults: [] });
+	expect(harness.queuedMessages).toEqual([]);
+	expect(harness.notifications).toEqual([]);
+	expect(harness.branch).toEqual([{ type: "custom", customType: "context-auto-heads-up-crossing", data: { threshold: 75 } }]);
+
+	const result = await harness.emit("before_agent_start") as BeforeAgentStartResult;
+	expect(result.message.content).toContain("crossed 75%");
+	expect(harness.notifications).toEqual(["Gave the agent a 75% context heads-up."]);
+});
+
+test("a final turn followed by queued messages keeps immediate in-run delivery", async () => {
+	const harness = createHarness(74);
+	await harness.emit("session_start");
+	harness.setContextPercent(76);
+	harness.setPendingMessages(true);
+	await harness.emit("turn_end", { toolResults: [] });
+	expect(harness.queuedMessages).toHaveLength(1);
+	expect(harness.queuedMessages[0]!.message.content).toContain("crossed 75%");
+});
+
+test("resuming delivers a recorded but undelivered crossing exactly once", async () => {
+	const harness = createHarness(76, [{ type: "custom", customType: "context-auto-heads-up-crossing", data: { threshold: 75 } }]);
+	await harness.emit("session_start");
+	const result = await harness.emit("before_agent_start") as BeforeAgentStartResult;
+	expect(result.message.content).toContain("crossed 75%");
+	expect(await harness.emit("before_agent_start")).toBeUndefined();
+});
+
+test("resuming does not deliver a recorded crossing that compaction or delivery already settled", async () => {
+	for (const settled of [{ type: "compaction" }, { type: "custom_message", customType: "context-auto-heads-up" }]) {
+		const harness = createHarness(40, [{ type: "custom", customType: "context-auto-heads-up-crossing", data: { threshold: 75 } }, settled]);
+		await harness.emit("session_start");
+		expect(await harness.emit("before_agent_start")).toBeUndefined();
+	}
 });

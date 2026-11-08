@@ -39,6 +39,7 @@ The wording is intentionally opinionated. It treats delegation and handoffs as c
 - A jump across several thresholds emits only the highest crossed threshold.
 - Compaction clears pending delivery. A later measured decrease can rearm thresholds; warnings already written are not retracted.
 - Mid-run heads-ups are appended persistently after the completed assistant/tool turn. The next natural model call sees them; no extra response is forced.
+- A crossing on a final answer is recorded in the session at once, keeping the answer as the last message (so `pi -p` still prints it). The next prompt delivers the heads-up, including after the process exits and the session resumes, unless compaction happens first.
 - Delivery appends new context without rewriting earlier prompt or tool messages. A heads-up remains in history instead of disappearing after one request.
 - Resuming a session starts from its current percentage. The extension does not emit retrospective heads-ups.
 
