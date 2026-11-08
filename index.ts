@@ -37,12 +37,11 @@ function getContextPercent(ctx: ExtensionContext): number | null {
 	return ctx.getContextUsage()?.percent ?? null;
 }
 
-/** The latest crossing recorded on the branch and not yet settled by delivery or compaction. */
+/** The latest crossing recorded on the branch and not yet delivered. Compaction does not settle it. */
 function findUndeliveredCrossing(ctx: ExtensionContext): number | null {
 	for (const entry of [...ctx.sessionManager.getBranch()].reverse()) {
 		if (entry.type === "custom" && entry.customType === CROSSING_ENTRY_TYPE) return (entry.data as { threshold: number }).threshold;
 		if (entry.type === "custom_message" && entry.customType === "context-auto-heads-up") return null;
-		if (entry.type === "compaction") return null;
 	}
 	return null;
 }
@@ -64,7 +63,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_start", (_event, ctx) => {
 		previousContextPercent = getContextPercent(ctx) ?? 0;
-		pendingThreshold = findUndeliveredCrossing(ctx);
+		pendingThreshold = null;
 	});
 
 	pi.on("session_compact", () => {
@@ -73,11 +72,13 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", (_event, ctx) => {
 		observeContextUsage(ctx);
-		if (pendingThreshold === null) return;
+		const recordedThreshold = findUndeliveredCrossing(ctx);
+		const threshold = recordedThreshold ?? pendingThreshold;
+		if (threshold === null) return;
 
-		const message = CONTEXT_AUTO_HEADS_UP_MESSAGE_BY_CONTEXT_PERCENT[pendingThreshold];
-		ctx.ui.notify(`Gave the agent a ${pendingThreshold}% context heads-up.`);
-		pendingThreshold = null;
+		const message = CONTEXT_AUTO_HEADS_UP_MESSAGE_BY_CONTEXT_PERCENT[threshold];
+		ctx.ui.notify(`Gave the agent a ${threshold}% context heads-up.`);
+		if (recordedThreshold === null) pendingThreshold = null;
 		return { message };
 	});
 
@@ -85,10 +86,11 @@ export default function (pi: ExtensionAPI) {
 		observeContextUsage(ctx);
 		if (pendingThreshold === null) return;
 
-		// A final answer must remain the last message, since print mode outputs only a trailing assistant message.
-		// Record the crossing durably now; the next prompt delivers it.
-		if (event.toolResults.length === 0 && !ctx.hasPendingMessages()) {
+		// Print mode outputs only a trailing assistant message, so a final answer there must stay last.
+		// Record the crossing durably instead; the next prompt delivers it, even after compaction or resume.
+		if (ctx.mode === "print" && event.toolResults.length === 0 && !ctx.hasPendingMessages()) {
 			pi.appendEntry(CROSSING_ENTRY_TYPE, { threshold: pendingThreshold });
+			pendingThreshold = null;
 			return;
 		}
 

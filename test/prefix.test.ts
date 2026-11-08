@@ -128,7 +128,7 @@ test("mid-run heads-ups persist without rewriting earlier system and tool prefix
 	expect(reminders[0]!.content).toContain("crossed 75%");
 });
 
-test("a final response keeps its answer last and records the crossing durably without another model call", async () => {
+test("in print mode, a final response keeps its answer last and records the crossing durably without another model call", async () => {
 	const { requests, messages, entries } = await runFixture(0);
 	expect(requests).toHaveLength(1);
 	expect(messages.at(-1)!.role).toBe("assistant");

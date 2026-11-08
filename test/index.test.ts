@@ -17,7 +17,7 @@ type BeforeAgentStartResult = { message: HeadsUpMessage };
 
 type BranchEntry = { type: string; customType?: string; data?: unknown };
 
-function createHarness(initialContextPercent: number | null, branch: BranchEntry[] = []) {
+function createHarness(initialContextPercent: number | null, branch: BranchEntry[] = [], mode = "tui") {
 	let contextPercent = initialContextPercent;
 	let pendingMessages = false;
 	const handlers = new Map<string, EventHandler>();
@@ -25,6 +25,7 @@ function createHarness(initialContextPercent: number | null, branch: BranchEntry
 	const queuedMessages: Array<{ message: HeadsUpMessage; options: { triggerTurn?: boolean } }> = [];
 	const extensionContext = {
 		getContextUsage: () => ({ tokens: contextPercent, contextWindow: 100, percent: contextPercent }),
+		mode,
 		hasPendingMessages: () => pendingMessages,
 		sessionManager: { getBranch: () => branch },
 		ui: { notify(message: string) { notifications.push(message); } },
@@ -50,7 +51,10 @@ function createHarness(initialContextPercent: number | null, branch: BranchEntry
 		async emit(eventName: string, event: Record<string, unknown> = eventName === "turn_end" ? { toolResults: [{}] } : {}) {
 			const handler = handlers.get(eventName);
 			if (!handler) throw new Error(`Missing ${eventName} handler`);
-			return handler(event, extensionContext);
+			const result = await handler(event, extensionContext) as { message?: HeadsUpMessage } | undefined;
+			// Pi persists a before_agent_start message as a custom message entry.
+			if (result?.message) branch.push({ type: "custom_message", customType: result.message.customType });
+			return result;
 		},
 	};
 }
@@ -129,8 +133,22 @@ test("retains persistent before-agent-start delivery when a user prompt crosses 
 	expect(await harness.emit("before_agent_start")).toBeUndefined();
 });
 
-test("a final answer's crossing is recorded durably without a context message, then delivered on the next prompt", async () => {
-	const harness = createHarness(74);
+test("outside print mode, a final answer's crossing is delivered immediately and persistently", async () => {
+	for (const mode of ["tui", "rpc", "json"]) {
+		const harness = createHarness(74, [], mode);
+		await harness.emit("session_start");
+		harness.setContextPercent(76);
+		await harness.emit("turn_end", { toolResults: [] });
+		expect(harness.queuedMessages).toHaveLength(1);
+		expect(harness.queuedMessages[0]!.message.content).toContain("crossed 75%");
+		expect(harness.queuedMessages[0]!.options).toEqual({ triggerTurn: false });
+		expect(harness.notifications).toEqual(["Gave the agent a 75% context heads-up."]);
+		expect(harness.branch.filter((entry) => entry.type === "custom")).toEqual([]);
+	}
+});
+
+test("in print mode, a final answer's crossing is recorded durably without a context message, then delivered on the next prompt", async () => {
+	const harness = createHarness(74, [], "print");
 	await harness.emit("session_start");
 	harness.setContextPercent(76);
 	await harness.emit("turn_end", { toolResults: [] });
@@ -143,8 +161,8 @@ test("a final answer's crossing is recorded durably without a context message, t
 	expect(harness.notifications).toEqual(["Gave the agent a 75% context heads-up."]);
 });
 
-test("a final turn followed by queued messages keeps immediate in-run delivery", async () => {
-	const harness = createHarness(74);
+test("in print mode, a final turn followed by queued messages keeps immediate in-run delivery", async () => {
+	const harness = createHarness(74, [], "print");
 	await harness.emit("session_start");
 	harness.setContextPercent(76);
 	harness.setPendingMessages(true);
@@ -161,10 +179,31 @@ test("resuming delivers a recorded but undelivered crossing exactly once", async
 	expect(await harness.emit("before_agent_start")).toBeUndefined();
 });
 
-test("resuming does not deliver a recorded crossing that compaction or delivery already settled", async () => {
-	for (const settled of [{ type: "compaction" }, { type: "custom_message", customType: "context-auto-heads-up" }]) {
-		const harness = createHarness(40, [{ type: "custom", customType: "context-auto-heads-up-crossing", data: { threshold: 75 } }, settled]);
-		await harness.emit("session_start");
-		expect(await harness.emit("before_agent_start")).toBeUndefined();
-	}
+test("resuming does not redeliver a recorded crossing that was already delivered", async () => {
+	const harness = createHarness(40, [{ type: "custom", customType: "context-auto-heads-up-crossing", data: { threshold: 75 } }, { type: "custom_message", customType: "context-auto-heads-up" }]);
+	await harness.emit("session_start");
+	expect(await harness.emit("before_agent_start")).toBeUndefined();
+});
+
+test("a recorded print-mode crossing is delivered after an intervening compaction lowers usage", async () => {
+	const harness = createHarness(89, [], "print");
+	await harness.emit("session_start");
+	harness.setContextPercent(95);
+	await harness.emit("turn_end", { toolResults: [] });
+	await harness.emit("session_compact");
+	harness.branch.push({ type: "compaction" });
+	harness.setContextPercent(30);
+	const result = await harness.emit("before_agent_start") as BeforeAgentStartResult;
+	expect(result.message.content).toContain("crossed 90%");
+});
+
+test("a recorded crossing resumed across compaction is delivered, and a new crossing still follows in the run", async () => {
+	const harness = createHarness(30, [{ type: "custom", customType: "context-auto-heads-up-crossing", data: { threshold: 90 } }, { type: "compaction" }]);
+	await harness.emit("session_start");
+	harness.setContextPercent(51);
+	const result = await harness.emit("before_agent_start") as BeforeAgentStartResult;
+	expect(result.message.content).toContain("crossed 90%");
+	await harness.emit("turn_end");
+	expect(harness.queuedMessages).toHaveLength(1);
+	expect(harness.queuedMessages[0]!.message.content).toContain("crossed 50%");
 });
