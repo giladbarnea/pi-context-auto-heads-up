@@ -1,6 +1,6 @@
 {
   "name": "@giladbarnea/pi-context-auto-heads-up",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Give Pi agents context-window heads-ups at 50%, 75%, and 90% usage.",
   "keywords": [
     "pi-package",
