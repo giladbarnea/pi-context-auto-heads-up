@@ -51,7 +51,8 @@ function createHarness(initialContextPercent: number | null, branch: BranchEntry
 		async emit(eventName: string, event: Record<string, unknown> = eventName === "turn_end" ? { toolResults: [{}] } : {}) {
 			const handler = handlers.get(eventName);
 			if (!handler) throw new Error(`Missing ${eventName} handler`);
-			const result = await handler(event, extensionContext) as { message?: HeadsUpMessage } | undefined;
+			const withMessage = eventName === "turn_end" ? { message: { role: "assistant", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 } }, ...event } : event;
+			const result = await handler(withMessage, extensionContext) as { message?: HeadsUpMessage } | undefined;
 			// Pi persists a before_agent_start message as a custom message entry.
 			if (result?.message) branch.push({ type: "custom_message", customType: result.message.customType });
 			return result;

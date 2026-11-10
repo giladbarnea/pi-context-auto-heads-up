@@ -1,5 +1,5 @@
 /** Give the agent one hidden heads-up when context usage crosses 50%, 75%, or 90%. */
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { calculateContextTokens, type ExtensionAPI, type ExtensionContext, type TurnEndEvent } from "@earendil-works/pi-coding-agent";
 
 type ContextAutoHeadsUpMessage = {
 	readonly customType: "context-auto-heads-up";
@@ -37,6 +37,13 @@ function getContextPercent(ctx: ExtensionContext): number | null {
 	return ctx.getContextUsage()?.percent ?? null;
 }
 
+/** Context usage when the turn's response was requested: after context edits committed at the previous turn end, before this turn's tool results. */
+function getRequestContextPercent(message: TurnEndEvent["message"], ctx: ExtensionContext): number | null {
+	const requestTokens = message.role === "assistant" ? calculateContextTokens(message.usage) : 0;
+	const contextWindow = ctx.getContextUsage()?.contextWindow;
+	return requestTokens > 0 && contextWindow ? (requestTokens / contextWindow) * 100 : null;
+}
+
 /** The latest crossing recorded on the branch and not yet delivered. Compaction does not settle it. */
 function findUndeliveredCrossing(ctx: ExtensionContext): number | null {
 	for (const entry of [...ctx.sessionManager.getBranch()].reverse()) {
@@ -50,8 +57,7 @@ export default function (pi: ExtensionAPI) {
 	let previousContextPercent = 0;
 	let pendingThreshold: number | null = null;
 
-	function observeContextUsage(ctx: ExtensionContext): void {
-		const currentContextPercent = getContextPercent(ctx);
+	function observeContextUsage(ctx: ExtensionContext, currentContextPercent = getContextPercent(ctx)): void {
 		if (currentContextPercent === null) return;
 
 		const crossedThresholds = CONTEXT_THRESHOLDS.filter((threshold) => previousContextPercent < threshold && currentContextPercent >= threshold);
@@ -83,6 +89,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("turn_end", (event, ctx) => {
+		observeContextUsage(ctx, getRequestContextPercent(event.message, ctx));
 		observeContextUsage(ctx);
 		if (pendingThreshold === null) return;
 
