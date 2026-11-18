@@ -10,6 +10,14 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pi: ["1.4.0", "1.5.2"]
+    env:
+      PI_VERSION: ${{ matrix.pi }}
+      PI_CODING_AGENT_DIR: ${{ runner.temp }}/pi-heads-up-agent
+      PI_OFFLINE: "1"
     steps:
       - uses: actions/checkout@v6
 
@@ -20,6 +28,42 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - run: npm ci
-      - run: npm run check
-      - run: npm pack --dry-run
+      - name: Install test dependencies
+        run: |
+          set -euo pipefail
+          : "${PI_VERSION:?PI_VERSION must be set}"
+          npm ci --ignore-scripts
+          npm install --no-save --package-lock=false --ignore-scripts \
+            "@earendil-works/pi-ai@$PI_VERSION" \
+            "@earendil-works/pi-coding-agent@$PI_VERSION" \
+            "@earendil-works/pi-tui@$PI_VERSION"
+
+      - name: Verify Pi versions
+        run: |
+          set -euo pipefail
+          node --version
+          npm --version
+          bun --version
+          node <<'NODE'
+          const assert = require("node:assert/strict");
+          const { execFileSync } = require("node:child_process");
+          const expected = process.env.PI_VERSION;
+          assert.ok(expected, "PI_VERSION must be set");
+          for (const name of ["pi-ai", "pi-coding-agent", "pi-tui"]) {
+            const actual = require(`./node_modules/@earendil-works/${name}/package.json`).version;
+            console.log(`${name}: ${actual}`);
+            assert.equal(actual, expected, `Expected ${name} ${expected}, got ${actual}`);
+          }
+          const cliVersion = execFileSync("./node_modules/.bin/pi", ["--version"], { encoding: "utf8" }).trim();
+          console.log(`Pi CLI: ${cliVersion}`);
+          assert.equal(cliVersion, expected, `Expected Pi CLI ${expected}, got ${cliVersion}`);
+          NODE
+
+      - name: Check and pack
+        env:
+          HOME: ${{ runner.temp }}/pi-heads-up-home
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME" "$PI_CODING_AGENT_DIR"
+          npm run check
+          npm pack --dry-run
