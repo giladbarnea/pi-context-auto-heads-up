@@ -16,7 +16,6 @@ jobs:
         pi: ["1.4.0", "1.5.2"]
     env:
       PI_VERSION: ${{ matrix.pi }}
-      PI_CODING_AGENT_DIR: ${{ runner.temp }}/pi-heads-up-agent
       PI_OFFLINE: "1"
     steps:
       - uses: actions/checkout@v6
@@ -62,6 +61,7 @@ jobs:
       - name: Check and pack
         env:
           HOME: ${{ runner.temp }}/pi-heads-up-home
+          PI_CODING_AGENT_DIR: ${{ runner.temp }}/pi-heads-up-agent
         run: |
           set -euo pipefail
           mkdir -p "$HOME" "$PI_CODING_AGENT_DIR"
