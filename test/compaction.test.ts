@@ -80,8 +80,9 @@ async function runPi(mode: "print" | "json" | "rpc", invocations: Invocation[], 
 		if (mode === "rpc") outputs.push(await runRpc([...baseArguments, "--mode", "rpc"], invocations, workDirectory, environment));
 		else for (const [index, invocation] of invocations.entries()) {
 			if (!("prompt" in invocation)) throw new Error("manual compaction needs rpc mode");
-			const child = Bun.spawn([...baseArguments, "-p", ...(mode === "json" ? ["--mode", "json"] : []), ...(index > 0 ? ["-c"] : []), invocation.prompt],
-				{ cwd: workDirectory, env: environment, stdout: "pipe", stderr: "pipe" });
+			// The prompt goes over stdin: Linux caps one argv entry at 128 KiB (MAX_ARG_STRLEN), and padded prompts exceed it.
+			const child = Bun.spawn([...baseArguments, "-p", ...(mode === "json" ? ["--mode", "json"] : []), ...(index > 0 ? ["-c"] : [])],
+				{ cwd: workDirectory, env: environment, stdin: new Blob([invocation.prompt]), stdout: "pipe", stderr: "pipe" });
 			const [stdout, stderr, exitCode] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
 			outputs.push({ exitCode, stdout, stderr });
 		}
