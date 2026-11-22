@@ -110,8 +110,8 @@ test("outside print mode, a final answer's crossing is persisted immediately aft
 	expect((messages.at(-2)!.message as { role: string }).role).toBe("assistant");
 });
 
-test("a print-mode crossing is delivered on the next prompt even after the crossing answer triggers compaction", async () => {
-	const { invocations, requests, summaries } = await runPrint([
+test("a print-mode crossing is dropped when the crossing answer triggers compaction before the next prompt", async () => {
+	const { invocations, requests, summaries, entries } = await runPrint([
 		{ text: "PADDED_ANSWER", inputTokens: 40_000 },
 		{ text: "CROSSING_ANSWER", inputTokens: 95_000 },
 		{ text: "AFTER_COMPACTION", inputTokens: 30_000 },
@@ -121,5 +121,6 @@ test("a print-mode crossing is delivered on the next prompt even after the cross
 	expect(requests).toHaveLength(3);
 	expect(JSON.stringify(requests[1]!.messages)).not.toContain("crossed 90%");
 	expect(JSON.stringify(requests[2]!.messages)).toContain("SUMMARY_");
-	expect(JSON.stringify(requests[2]!.messages)).toContain("crossed 90%");
+	expect(entries.filter((entry) => entry.type === "custom" && entry.customType === "context-auto-heads-up-crossing").map((entry) => entry.data)).toEqual([{ threshold: 90 }]);
+	expect(JSON.stringify(requests[2]!.messages)).not.toContain("crossed 90%");
 });

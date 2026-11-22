@@ -38,8 +38,9 @@ The wording is intentionally opinionated. It treats delegation and handoffs as c
 - Each threshold fires once per upward crossing.
 - A jump across several thresholds emits only the highest crossed threshold.
 - Compaction clears pending delivery. A later measured decrease can rearm thresholds; warnings already written are not retracted.
+- After every compaction, manual or automatic, the agent gets one hidden notice: “Your context window was just compacted and is now at N% usage. Ignore context usage measurements from before this compaction. You will receive context usage notifications as usual for your current context window.” Pi reports usage as unknown until the first response after compaction, so the notice follows that response. In print mode, when that response is the final answer, the next prompt delivers the notice instead.
 - Mid-run heads-ups are appended persistently after the completed assistant/tool turn. The next natural model call sees them; no extra response is forced.
-- In print mode (`pi -p`), which outputs only a trailing assistant message, a crossing on the final answer is recorded in the session at once instead, keeping the answer printable. The next prompt delivers that heads-up, including after the process exits, the session resumes, or compaction runs. Other modes deliver it immediately.
+- In print mode (`pi -p`), which outputs only a trailing assistant message, a crossing on the final answer is recorded in the session at once instead, keeping the answer printable. The next prompt delivers that heads-up, including after the process exits or the session resumes. A compaction before then discards it, because it measured the pre-compaction context; the compaction notice reports the new usage instead. Other modes deliver it immediately.
 - Delivery appends new context without rewriting earlier prompt or tool messages. A heads-up remains in history instead of disappearing after one request.
 - Resuming a session starts from its current percentage. The extension does not emit retrospective heads-ups.
 

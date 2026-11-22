@@ -15,12 +15,12 @@ type HeadsUpMessage = {
 
 type BeforeAgentStartResult = { message: HeadsUpMessage };
 
-type BranchEntry = { type: string; customType?: string; data?: unknown };
+type BranchEntry = { type: string; customType?: string; data?: unknown; content?: string };
 
 function createHarness(initialContextPercent: number | null, branch: BranchEntry[] = [], mode = "tui") {
 	let contextPercent = initialContextPercent;
 	let pendingMessages = false;
-	const handlers = new Map<string, EventHandler>();
+	const handlers = new Map<string, EventHandler[]>();
 	const notifications: string[] = [];
 	const queuedMessages: Array<{ message: HeadsUpMessage; options: { triggerTurn?: boolean } }> = [];
 	const extensionContext = {
@@ -31,10 +31,10 @@ function createHarness(initialContextPercent: number | null, branch: BranchEntry
 		ui: { notify(message: string) { notifications.push(message); } },
 	} as unknown as ExtensionContext;
 	const pi = {
-		on(eventName: string, handler: EventHandler) { handlers.set(eventName, handler); },
+		on(eventName: string, handler: EventHandler) { handlers.set(eventName, [...handlers.get(eventName) ?? [], handler]); },
 		sendMessage(message: HeadsUpMessage, options: { triggerTurn?: boolean }) {
 			queuedMessages.push({ message, options });
-			branch.push({ type: "custom_message", customType: message.customType });
+			branch.push({ type: "custom_message", customType: message.customType, content: message.content });
 		},
 		appendEntry(customType: string, data: unknown) {
 			branch.push({ type: "custom", customType, data });
@@ -49,13 +49,17 @@ function createHarness(initialContextPercent: number | null, branch: BranchEntry
 		setContextPercent(value: number | null) { contextPercent = value; },
 		setPendingMessages(value: boolean) { pendingMessages = value; },
 		async emit(eventName: string, event: Record<string, unknown> = eventName === "turn_end" ? { toolResults: [{}] } : {}) {
-			const handler = handlers.get(eventName);
-			if (!handler) throw new Error(`Missing ${eventName} handler`);
+			const eventHandlers = handlers.get(eventName);
+			if (!eventHandlers) throw new Error(`Missing ${eventName} handler`);
 			const withMessage = eventName === "turn_end" ? { message: { role: "assistant", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 } }, ...event } : event;
-			const result = await handler(withMessage, extensionContext) as { message?: HeadsUpMessage } | undefined;
-			// Pi persists a before_agent_start message as a custom message entry.
-			if (result?.message) branch.push({ type: "custom_message", customType: result.message.customType });
-			return result;
+			const results: Array<{ message?: HeadsUpMessage } | undefined> = [];
+			for (const handler of eventHandlers) {
+				const result = await handler(withMessage, extensionContext) as { message?: HeadsUpMessage } | undefined;
+				// Pi persists each before_agent_start message as a custom message entry, in handler order.
+				if (result?.message) branch.push({ type: "custom_message", customType: result.message.customType, content: result.message.content });
+				results.push(result);
+			}
+			return results.find((result) => result !== undefined);
 		},
 	};
 }
@@ -109,9 +113,71 @@ test("compaction leaves a delivered warning historical and allows a later recros
 	harness.setContextPercent(51);
 	await harness.emit("turn_end");
 
-	expect(harness.queuedMessages).toHaveLength(2);
-	expect(harness.queuedMessages[0]!.message.content).toContain("crossed 90%");
-	expect(harness.queuedMessages[1]!.message.content).toContain("crossed 50%");
+	expect(harness.queuedMessages.map(({ message }) => message.content.slice(0, 64))).toEqual([
+		"Automatic heads up: you just crossed 90% context window usage. U",
+		"Your context window was just compacted and is now at 35% usage. ",
+		"Automatic heads-up: context usage just crossed 50%. If more than",
+	]);
+});
+
+test("after compaction, the notice waits for a measured reading and is sent once, hidden, with the exact text", async () => {
+	const harness = createHarness(60);
+	await harness.emit("session_start");
+	await harness.emit("session_compact");
+	harness.setContextPercent(null);
+	expect(await harness.emit("before_agent_start")).toBeUndefined();
+	await harness.emit("turn_end");
+	expect(harness.queuedMessages).toEqual([]);
+	harness.setContextPercent(21.4);
+	await harness.emit("turn_end");
+	harness.setContextPercent(22);
+	await harness.emit("turn_end");
+	expect(await harness.emit("before_agent_start")).toBeUndefined();
+
+	expect(harness.queuedMessages).toEqual([{
+		message: {
+			customType: "context-auto-heads-up-compaction-notice",
+			content: "Your context window was just compacted and is now at 21% usage. Ignore context usage measurements from before this compaction. You will receive context usage notifications as usual for your current context window.",
+			display: false,
+		},
+		options: { triggerTurn: false },
+	}]);
+});
+
+test("each compaction gets its own notice", async () => {
+	const harness = createHarness(60);
+	await harness.emit("session_start");
+	for (const percent of [30, 25]) {
+		await harness.emit("session_compact");
+		harness.setContextPercent(percent);
+		await harness.emit("turn_end");
+	}
+	expect(harness.queuedMessages.map(({ message }) => /now at (\d+)%/.exec(message.content)![1])).toEqual(["30", "25"]);
+});
+
+test("in print mode, a final answer's notice waits for the next prompt, which delivers it once and drops the pre-compaction crossing", async () => {
+	const harness = createHarness(70, [], "print");
+	await harness.emit("session_start");
+	harness.setContextPercent(80);
+	await harness.emit("turn_end", { toolResults: [] });
+	await harness.emit("session_compact");
+	harness.setContextPercent(30);
+	await harness.emit("turn_end", { toolResults: [] });
+	expect(harness.queuedMessages).toEqual([]);
+
+	harness.setContextPercent(31);
+	await harness.emit("before_agent_start");
+	await harness.emit("before_agent_start");
+	const delivered = harness.branch.filter((entry) => entry.type === "custom_message").map((entry) => entry.content!.slice(0, 64));
+	expect(delivered).toEqual(["Your context window was just compacted and is now at 31% usage. "]);
+});
+
+test("resuming a session compacted before this notice existed sends no retrospective notice", async () => {
+	const harness = createHarness(30, [{ type: "compaction" }]);
+	await harness.emit("session_start");
+	expect(await harness.emit("before_agent_start")).toBeUndefined();
+	await harness.emit("turn_end");
+	expect(harness.queuedMessages).toEqual([]);
 });
 
 test("resuming above a threshold does not send a retrospective warning", async () => {
@@ -186,7 +252,7 @@ test("resuming does not redeliver a recorded crossing that was already delivered
 	expect(await harness.emit("before_agent_start")).toBeUndefined();
 });
 
-test("a recorded print-mode crossing is delivered after an intervening compaction lowers usage", async () => {
+test("a recorded print-mode crossing is discarded by an intervening compaction, so only the compaction notice is delivered", async () => {
 	const harness = createHarness(89, [], "print");
 	await harness.emit("session_start");
 	harness.setContextPercent(95);
@@ -195,16 +261,17 @@ test("a recorded print-mode crossing is delivered after an intervening compactio
 	harness.branch.push({ type: "compaction" });
 	harness.setContextPercent(30);
 	const result = await harness.emit("before_agent_start") as BeforeAgentStartResult;
-	expect(result.message.content).toContain("crossed 90%");
+	expect(result.message.customType).toBe("context-auto-heads-up-compaction-notice");
+	expect(harness.branch.filter((entry) => entry.type === "custom_message").map((entry) => entry.customType)).toEqual(["context-auto-heads-up-compaction-notice"]);
+	expect(await harness.emit("before_agent_start")).toBeUndefined();
 });
 
-test("a recorded crossing resumed across compaction is delivered, and a new crossing still follows in the run", async () => {
+test("a recorded crossing resumed across a compaction this extension did not observe is dropped without a notice, and a new crossing still follows in the run", async () => {
 	const harness = createHarness(30, [{ type: "custom", customType: "context-auto-heads-up-crossing", data: { threshold: 90 } }, { type: "compaction" }]);
 	await harness.emit("session_start");
 	harness.setContextPercent(51);
-	const result = await harness.emit("before_agent_start") as BeforeAgentStartResult;
-	expect(result.message.content).toContain("crossed 90%");
+	await harness.emit("before_agent_start");
 	await harness.emit("turn_end");
-	expect(harness.queuedMessages).toHaveLength(1);
-	expect(harness.queuedMessages[0]!.message.content).toContain("crossed 50%");
+	const delivered = harness.branch.filter((entry) => entry.type === "custom_message").map((entry) => entry.content!.slice(0, 51));
+	expect(delivered).toEqual(["Automatic heads-up: context usage just crossed 50%."]);
 });
