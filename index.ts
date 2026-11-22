@@ -1,5 +1,5 @@
 /** Give the agent one hidden heads-up when context usage crosses 50%, 75%, or 90%, and one after every compaction. */
-import { calculateContextTokens, type ExtensionAPI, type ExtensionContext, type TurnEndEvent } from "@earendil-works/pi-coding-agent";
+import { calculateContextTokens, getLastAssistantUsage, type ExtensionAPI, type ExtensionContext, type SessionEntry, type TurnEndEvent } from "@earendil-works/pi-coding-agent";
 
 type ContextAutoHeadsUpMessage = {
 	readonly customType: "context-auto-heads-up";
@@ -50,8 +50,23 @@ function compactionNotice(contextPercent: number): CompactionNotice {
 	};
 }
 
+/** The branch entries after the latest entry of one of these types; the whole branch if there is none. */
+function branchAfterLatest(ctx: ExtensionContext, types: ReadonlyArray<SessionEntry["type"]>): SessionEntry[] {
+	const branch = ctx.sessionManager.getBranch();
+	const latestFromEnd = [...branch].reverse().findIndex((entry) => types.includes(entry.type));
+	return latestFromEnd < 0 ? branch : branch.slice(branch.length - latestFromEnd);
+}
+
+/** Pi's reading, only when measured: like Pi's estimateProjectedContextTokens, it trusts usage only from a response newer than every context edit and compaction, and otherwise reports a chars/4 estimate. */
 function getContextPercent(ctx: ExtensionContext): number | null {
-	return ctx.getContextUsage()?.percent ?? null;
+	return getLastAssistantUsage(branchAfterLatest(ctx, ["context_edit", "compaction"])) ? ctx.getContextUsage()?.percent ?? null : null;
+}
+
+/** The latest response's measured usage, for resuming where Pi now estimates. None once a compaction follows it: it measured the pre-compaction context. */
+function getLastMeasuredContextPercent(ctx: ExtensionContext): number | null {
+	const usage = getLastAssistantUsage(branchAfterLatest(ctx, ["compaction"]));
+	const contextWindow = ctx.getContextUsage()?.contextWindow;
+	return usage && contextWindow ? (calculateContextTokens(usage) / contextWindow) * 100 : null;
 }
 
 /** Context usage when the turn's response was requested: after context edits committed at the previous turn end, before this turn's tool results. */
@@ -106,7 +121,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.on("session_start", (_event, ctx) => {
-		previousContextPercent = getContextPercent(ctx) ?? 0;
+		previousContextPercent = getContextPercent(ctx) ?? getLastMeasuredContextPercent(ctx) ?? 0;
 		pendingThreshold = null;
 	});
 

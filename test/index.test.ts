@@ -15,7 +15,11 @@ type HeadsUpMessage = {
 
 type BeforeAgentStartResult = { message: HeadsUpMessage };
 
-type BranchEntry = { type: string; customType?: string; data?: unknown; content?: string };
+type BranchEntry = { type: string; customType?: string; data?: unknown; content?: string; message?: unknown };
+
+function measuredResponse(contextPercent: number | null): BranchEntry {
+	return { type: "message", message: { role: "assistant", stopReason: "stop", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: contextPercent ?? 0 } } };
+}
 
 function createHarness(initialContextPercent: number | null, branch: BranchEntry[] = [], mode = "tui") {
 	let contextPercent = initialContextPercent;
@@ -27,7 +31,8 @@ function createHarness(initialContextPercent: number | null, branch: BranchEntry
 		getContextUsage: () => ({ tokens: contextPercent, contextWindow: 100, percent: contextPercent }),
 		mode,
 		hasPendingMessages: () => pendingMessages,
-		sessionManager: { getBranch: () => branch },
+		// Pi measures a reading only from a response newer than every context edit and compaction; the harness's readings are such measurements.
+		sessionManager: { getBranch: () => [...branch, measuredResponse(contextPercent)] },
 		ui: { notify(message: string) { notifications.push(message); } },
 	} as unknown as ExtensionContext;
 	const pi = {
