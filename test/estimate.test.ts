@@ -10,7 +10,7 @@ const CONTEXT_WINDOW = 100_000;
 const MEASURED_PER_ESTIMATED = 1.3;
 
 const piVersion = (await new Response(Bun.spawn([piBinary, "--version"], { stdout: "pipe" }).stdout).text()).trim();
-if (!/^1\.5\.\d+$/.test(piVersion)) throw new Error(`these tests target Pi 1.5, got ${JSON.stringify(piVersion)} from ${piBinary}`);
+if (!/^1\.[56]\.\d+$/.test(piVersion)) throw new Error(`these tests target Pi 1.5 or 1.6, got ${JSON.stringify(piVersion)} from ${piBinary}`);
 
 type Reply = { text: string } | { tool: string } | { overloaded: true };
 type SessionEntry = Record<string, unknown>;
